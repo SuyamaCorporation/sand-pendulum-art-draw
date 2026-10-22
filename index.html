@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sand Pendulum Lissajous Art Drawer</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  canvas { display: block; }
+  input[type=range] { accent-color: #f59e0b; }
+</style>
+</head>
+<body class="bg-gray-950 text-white min-h-screen flex flex-col items-center py-6 px-4">
+<h1 class="text-3xl font-bold mb-2 text-amber-400">🌊 Sand Pendulum Art</h1>
+<p class="text-gray-400 mb-4 text-center max-w-md">Lissajous figures with damped oscillation — like a sand pendulum.</p>
+
+<div class="w-full max-w-3xl flex flex-col lg:flex-row gap-4 items-start justify-center">
+  <!-- Canvas -->
+  <div class="flex flex-col items-center">
+    <canvas id="artCanvas" width="540" height="540" class="rounded-2xl bg-black shadow-2xl border border-gray-700"
+      role="img" aria-label="Sand pendulum art canvas"></canvas>
+    <div class="flex gap-3 mt-3">
+      <button onclick="resetDraw()" class="bg-gray-700 hover:bg-gray-600 font-bold py-2 px-5 rounded-lg transition-colors">
+        Reset
+      </button>
+      <button onclick="downloadPng()" class="bg-amber-600 hover:bg-amber-500 font-bold py-2 px-5 rounded-lg transition-colors">
+        Download PNG
+      </button>
+      <button id="pause-btn" onclick="togglePause()" class="bg-blue-700 hover:bg-blue-600 font-bold py-2 px-5 rounded-lg transition-colors">
+        Pause
+      </button>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="bg-gray-900 rounded-2xl p-5 shadow-xl w-full lg:w-64 space-y-4">
+    <div>
+      <label for="freq-x" class="block text-sm font-semibold text-gray-300 mb-1">Freq X: <span id="freq-x-val">3</span></label>
+      <input type="range" id="freq-x" min="1" max="8" step="1" value="3" class="w-full" aria-label="X frequency">
+    </div>
+    <div>
+      <label for="freq-y" class="block text-sm font-semibold text-gray-300 mb-1">Freq Y: <span id="freq-y-val">2</span></label>
+      <input type="range" id="freq-y" min="1" max="8" step="1" value="2" class="w-full" aria-label="Y frequency">
+    </div>
+    <div>
+      <label for="phase" class="block text-sm font-semibold text-gray-300 mb-1">Phase: <span id="phase-val">0.50</span>π</label>
+      <input type="range" id="phase" min="0" max="200" step="1" value="50" class="w-full" aria-label="Phase offset">
+    </div>
+    <div>
+      <label for="decay" class="block text-sm font-semibold text-gray-300 mb-1">Decay: <span id="decay-val">0.0008</span></label>
+      <input type="range" id="decay" min="1" max="30" step="1" value="8" class="w-full" aria-label="Decay rate">
+    </div>
+    <div>
+      <label for="speed" class="block text-sm font-semibold text-gray-300 mb-1">Speed: <span id="speed-val">1.0</span>x</label>
+      <input type="range" id="speed" min="1" max="10" step="1" value="3" class="w-full" aria-label="Draw speed">
+    </div>
+    <div>
+      <label for="hue-start" class="block text-sm font-semibold text-gray-300 mb-1">Hue Start: <span id="hue-val">0</span>°</label>
+      <input type="range" id="hue-start" min="0" max="360" step="1" value="0" class="w-full" aria-label="Hue start">
+    </div>
+    <button onclick="resetDraw()" class="w-full bg-amber-700 hover:bg-amber-600 font-bold py-2 rounded-lg transition-colors">
+      Apply & Redraw
+    </button>
+  </div>
+</div>
+
+<script>
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+
+const canvas = document.getElementById('artCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width;
+const H = canvas.height;
+const CX = W / 2;
+const CY = H / 2;
+
+let t = 0;
+let animId = null;
+let paused = false;
+let currentHue = 0;
+let prevX = null;
+let prevY = null;
+
+function getParams() {
+  const fx = parseInt(document.getElementById('freq-x').value);
+  const fy = parseInt(document.getElementById('freq-y').value);
+  const phase = parseFloat(document.getElementById('phase').value) / 100 * Math.PI;
+  const decayRaw = parseInt(document.getElementById('decay').value);
+  const decay = decayRaw * 0.0001;
+  const speed = parseInt(document.getElementById('speed').value) * 0.005;
+  const hueStart = parseInt(document.getElementById('hue-start').value);
+  return { fx, fy, phase, decay, speed, hueStart };
+}
+
+function resetDraw() {
+  cancelAnimationFrame(animId);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  t = 0;
+  prevX = null;
+  prevY = null;
+  paused = false;
+  document.getElementById('pause-btn').textContent = 'Pause';
+  const p = getParams();
+  currentHue = p.hueStart;
+  drawLoop();
+}
+
+function drawLoop() {
+  const p = getParams();
+  const stepsPerFrame = Math.max(1, Math.round(p.speed * 200));
+
+  for (let s = 0; s < stepsPerFrame; s++) {
+    const amplitude = Math.exp(-p.decay * t) * (W * 0.44);
+    if (amplitude < 0.5) {
+      cancelAnimationFrame(animId);
+      return;
+    }
+    const x = CX + amplitude * Math.sin(p.fx * t + p.phase);
+    const y = CY + amplitude * Math.sin(p.fy * t);
+
+    if (prevX !== null) {
+      const alpha = Math.min(1, amplitude / (W * 0.44) + 0.1);
+      ctx.strokeStyle = `hsla(${currentHue % 360}, 85%, 65%, ${alpha.toFixed(2)})`;
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(prevX, prevY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+    }
+
+    prevX = x;
+    prevY = y;
+    t += 0.01;
+    currentHue += 0.15;
+  }
+
+  animId = requestAnimationFrame(drawLoop);
+}
+
+function togglePause() {
+  paused = !paused;
+  document.getElementById('pause-btn').textContent = paused ? 'Resume' : 'Pause';
+  if (paused) {
+    cancelAnimationFrame(animId);
+  } else {
+    drawLoop();
+  }
+}
+
+function downloadPng() {
+  const a = document.createElement('a');
+  a.download = 'sand-pendulum.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+// Bind sliders to display
+['freq-x','freq-y','phase','decay','speed','hue-start'].forEach(id => {
+  const slider = document.getElementById(id);
+  const display = document.getElementById(id + '-val') || document.getElementById(id.replace('freq-','freq-') + '-val');
+  slider.addEventListener('input', () => {
+    const v = parseFloat(slider.value);
+    if (id === 'freq-x') document.getElementById('freq-x-val').textContent = v;
+    else if (id === 'freq-y') document.getElementById('freq-y-val').textContent = v;
+    else if (id === 'phase') document.getElementById('phase-val').textContent = (v/100).toFixed(2);
+    else if (id === 'decay') document.getElementById('decay-val').textContent = (v*0.0001).toFixed(4);
+    else if (id === 'speed') document.getElementById('speed-val').textContent = (v/2).toFixed(1);
+    else if (id === 'hue-start') document.getElementById('hue-val').textContent = v;
+  });
+});
+
+resetDraw();
+</script>
+</body>
+</html>
